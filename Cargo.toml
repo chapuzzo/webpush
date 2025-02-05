@@ -1,10 +1,16 @@
+[package]
+name = "webpush"
+version = "0.1.0"
+authors = ["luismax@gmail.com"]
+edition = "2021"
+
 [dependencies]
-axum = "0.6"  # Web framework
-serde = { version = "1.0", features = ["derive"] } # For serializing data
-serde_json = "1.0"  # For JSON handling
-sqlx = { version = "0.5", features = ["sqlite", "json"] } # SQLite and JSON support
-tokio = { version = "1", features = ["full"] } # Async runtime
-web-push = "0.6"  # For sending Web Push notifications
-uuid = "1.0"  # For generating unique IDs for subscriptions
-dotenv = "0.15"  # For managing environment variables
-tower = "0.4"  # For middleware support (used by axum)
+axum = "0.8.1"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+sqlx = { version = "0.8.3", features = ["sqlite", "json"] }
+tokio = { version = "1", features = ["full"] }
+web-push = "0.10.2"
+uuid = { version = "1.0", features = ["v7"] }
+tower = "0.5.2"
+dotenvy = "0.15.7"

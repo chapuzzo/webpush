@@ -1,15 +1,15 @@
 use axum::{
-    routing::{post},
+    routing::post,
     Router, Json, extract::State,
 };
 use sqlx::{SqlitePool, FromRow};
 use serde::{Deserialize, Serialize};
-use web_push::{WebPushClient, PushMessage, WebPushError};
+use web_push::{WebPushClient, WebPushMessage, WebPushError};
 use web_push::vapid::{generate_vapid_keys, VapidKeys};
 use tokio::sync::Mutex;
 use std::sync::Arc;
 use uuid::Uuid;
-use dotenv::dotenv;
+use dotenvy::dotenv;
 use std::env;
 
 #[derive(Serialize, Deserialize)]
@@ -88,7 +88,7 @@ async fn subscribe(
 
 async fn send_notification(
     State(pool): State<AppState>,
-    Json(payload): Json<PushMessage>,
+    Json(payload): Json<WebPushMessage>,
 ) -> axum::response::Json<String> {
     // Fetch all subscriptions from the database
     let subscriptions = sqlx::query_as::<_, StoredSubscription>(
