@@ -1,0 +1,10 @@
+[dependencies]
+axum = "0.6"  # Web framework
+serde = { version = "1.0", features = ["derive"] } # For serializing data
+serde_json = "1.0"  # For JSON handling
+sqlx = { version = "0.5", features = ["sqlite", "json"] } # SQLite and JSON support
+tokio = { version = "1", features = ["full"] } # Async runtime
+web-push = "0.6"  # For sending Web Push notifications
+uuid = "1.0"  # For generating unique IDs for subscriptions
+dotenv = "0.15"  # For managing environment variables
+tower = "0.4"  # For middleware support (used by axum)
