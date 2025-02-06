@@ -1,16 +1,20 @@
 use axum::{
-    routing::post,
-    Router, Json, extract::State,
+    extract::State,
+    http::{StatusCode, Uri},
+    response::{IntoResponse, Response},
+    routing::{get, post},
+    Json, Router, ServiceExt,
 };
-use sqlx::{SqlitePool, FromRow};
-use serde::{Deserialize, Serialize};
-use web_push::{WebPushClient, WebPushMessage, WebPushError};
-use web_push::vapid::{generate_vapid_keys, VapidKeys};
-use tokio::sync::Mutex;
-use std::sync::Arc;
-use uuid::Uuid;
 use dotenvy::dotenv;
-use std::env;
+use serde::{Deserialize, Serialize};
+use sqlx::{FromRow, SqlitePool};
+use std::{env::var, fs::File, sync::Arc};
+use tokio::net::TcpListener;
+use tower_http::services::{ServeDir, ServeFile};
+use web_push::{
+    IsahcWebPushClient, SubscriptionInfo, VapidSignatureBuilder, WebPushClient,
+    WebPushMessageBuilder,
+};
 
 #[derive(Serialize, Deserialize)]
 struct Subscription {
@@ -29,29 +33,32 @@ struct SubscriptionKeys {
 struct StoredSubscription {
     id: i64,
     endpoint: String,
-    keys: String,  // Stored as JSON
+    keys: String, // Stored as JSON
     user_id: Option<String>,
 }
 
-// Define the shared state for the application (SQLite Pool)
-type AppState = Arc<Mutex<SqlitePool>>;
+pub struct StaticFile<T>(pub T);
+
+type AppState = Arc<SqlitePool>;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     dotenv().ok();
-    let database_url = env::var("DATABASE_URL").unwrap_or("sqlite:subscriptions.db".to_string());
+    let database_url = var("DATABASE_URL").unwrap_or("sqlite:subscriptions.db".to_string());
     let pool = SqlitePool::connect(&database_url).await?;
 
-    // Set up the Axum app
+    let servedir = ServeDir::new("frontend");
+    let servefile = ServeFile::new("public.b64");
+
     let app = Router::new()
+        .fallback_service(servedir)
+        .nest_service("/pubkey", servefile)
         .route("/subscribe", post(subscribe))
         .route("/send_notification", post(send_notification))
-        .layer(State::new(Arc::new(Mutex::new(pool))));
+        .with_state(Arc::new(pool));
 
-    // Run the server
-    axum::Server::bind(&"127.0.0.1:8080".parse()?)
-        .serve(app.into_make_service())
-        .await?;
+    let listener = TcpListener::bind("0.0.0.0:8080").await?;
+    axum::serve(listener, app).await?;
 
     Ok(())
 }
@@ -60,15 +67,12 @@ async fn subscribe(
     State(pool): State<AppState>,
     Json(subscription): Json<Subscription>,
 ) -> axum::response::Json<Subscription> {
-    // Save subscription to the database
-    let query = sqlx::query(
-        "INSERT INTO subscriptions (endpoint, keys, user_id) VALUES (?, ?, ?)",
-    )
-    .bind(subscription.endpoint)
-    .bind(serde_json::to_string(&subscription.keys).unwrap()) // Store keys as JSON
-    .bind(subscription.user_id)
-    .execute(pool.lock().await)
-    .await;
+    let query = sqlx::query("INSERT INTO subscriptions (endpoint, keys, user_id) VALUES (?, ?, ?)")
+        .bind(&subscription.endpoint)
+        .bind(serde_json::to_string(&subscription.keys).unwrap()) // Store keys as JSON
+        .bind(&subscription.user_id)
+        .execute(&*pool)
+        .await;
 
     match query {
         Ok(_) => axum::response::Json(subscription),
@@ -88,35 +92,37 @@ async fn subscribe(
 
 async fn send_notification(
     State(pool): State<AppState>,
-    Json(payload): Json<WebPushMessage>,
+    Json(()): Json<()>,
 ) -> axum::response::Json<String> {
-    // Fetch all subscriptions from the database
     let subscriptions = sqlx::query_as::<_, StoredSubscription>(
         "SELECT id, endpoint, keys, user_id FROM subscriptions",
     )
-    .fetch_all(pool.lock().await)
+    .fetch_all(&*pool)
     .await;
 
     match subscriptions {
         Ok(subscriptions) => {
-            let vapid_keys = get_vapid_keys();
-            let client = WebPushClient::new(vapid_keys).unwrap();
+            let client = IsahcWebPushClient::new().unwrap();
 
             for sub in subscriptions {
                 let keys: SubscriptionKeys = serde_json::from_str(&sub.keys).unwrap();
 
-                let push_subscription = web_push::SubscriptionInfo {
-                    endpoint: sub.endpoint,
-                    p256dh: keys.p256dh,
-                    auth: keys.auth,
-                };
+                let push_subscription =
+                    SubscriptionInfo::new(&sub.endpoint, &keys.p256dh, &keys.auth);
 
-                let message = PushMessage {
-                    payload: serde_json::to_string(&payload).unwrap(),
-                    subscription: push_subscription,
-                };
+                let file = File::open("private.pem").unwrap();
+                let sig_builder = VapidSignatureBuilder::from_pem(file, &push_subscription)
+                    .unwrap()
+                    .build()
+                    .unwrap();
 
-                match client.send(&message).await {
+                let mut builder = WebPushMessageBuilder::new(&push_subscription);
+                builder.set_payload(web_push::ContentEncoding::default(), b"some body to send");
+                builder.set_vapid_signature(sig_builder);
+
+                let message = builder.build().unwrap();
+
+                match client.send(message).await {
                     Ok(_) => println!("Notification sent to: {}", sub.endpoint),
                     Err(err) => eprintln!("Error sending notification: {:?}", err),
                 }
@@ -128,16 +134,5 @@ async fn send_notification(
             eprintln!("Error fetching subscriptions: {:?}", e);
             axum::response::Json("Error fetching subscriptions".to_string())
         }
-    }
-}
-
-// VAPID key generation logic (can be replaced with your actual keys)
-fn get_vapid_keys() -> VapidKeys {
-    dotenv().ok();
-    let public_key = env::var("VAPID_PUBLIC_KEY").unwrap();
-    let private_key = env::var("VAPID_PRIVATE_KEY").unwrap();
-    VapidKeys {
-        public_key,
-        private_key,
     }
 }
