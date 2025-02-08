@@ -9,8 +9,15 @@ if ("serviceWorker" in navigator && "PushManager" in window) {
     });
 
   const subscribeButton = document.getElementById("subscribeBtn");
-  subscribeButton.addEventListener("click", function () {
+  subscribeButton.addEventListener("click", () => {
     subscribeUserToPush();
+  });
+
+  const testButton = document.getElementById("testBtn");
+  testButton.addEventListener("click", async () => {
+    const headers = new Headers();
+    headers.append("Content-Type", "application/json");
+    await fetch("/send_notification", { method: "POST", body: "null", headers });
   });
 
   async function subscribeUserToPush() {
