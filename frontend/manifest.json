@@ -1,0 +1,20 @@
+{
+    "short_name": "MMC",
+    "name": "Molesta Mi Coche",
+    "icons": [
+        {
+            "src": "/favicon-192x192.jpg",
+            "sizes": "192x192",
+            "type": "image/jpg"
+        },
+        {
+            "src": "/favicon-512x512.jpg",
+            "sizes": "512x512",
+            "type": "image/jpg"
+        }
+    ],
+    "start_url": ".",
+    "display": "standalone",
+    "theme_color": "#330033",
+    "background_color": "#ffddff"
+}

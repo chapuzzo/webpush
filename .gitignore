@@ -1,6 +1,3 @@
 .env
-private.pem
-public.b64
-subscriptions.db
-Dockerfile
+/data
 /target
